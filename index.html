@@ -2831,17 +2831,17 @@
           method: "POST",
           headers: getApiHeaders(),
           body: JSON.stringify({
-            "businessName": "Better Delivery",
-            "type": "individual",
+            "businessName": "Better Nursery",
+            "type": "company",
             "firstName": "John",
             "lastName": "Doe",
             "email": "john.doe@example.com",
             "country": "GB",
             "url": "http://example.com",
-            "serviceDescription": "Gym operator",
+            "serviceDescription": "Nursery operator",
             "birthDate": "1980-01-01",
             "phone": "+44912345678",
-            "category": "FOOD_DELIVERY",
+            "category": "CHILD_CARE_SERVICES",
             "createOnboardingLink": true
           })
         })
@@ -5517,6 +5517,7 @@
       // Create TFC token request
       const tfcTokenRequest = {
         scopes: ["master"],
+        paymentMethods: ["taxFreeChildcare", "card"],
         email: customerEmail,
         reference: mainReference,
         description: description,
