@@ -2753,6 +2753,15 @@
             e.stopPropagation();
             openOnboardingComponent();
           }
+          
+          // Match "COMPLETE ONBOARDING", "COMPLETE", "FINISH", and "FINISH ONBOARDING" buttons
+          if (buttonText === 'COMPLETE ONBOARDING' || buttonText === 'COMPLETE' || 
+              buttonText === 'FINISH' || buttonText === 'FINISH ONBOARDING') {
+            console.log(buttonText + " button clicked - completing onboarding");
+            e.preventDefault();
+            e.stopPropagation();
+            completeOnboarding();
+          }
         }
       }, true); // Use capture phase to ensure we catch the event first
 
@@ -2951,6 +2960,170 @@
         .catch(err => {
           console.error("Error during onboarding setup:", err);
           alert("Error setting up onboarding: " + err.message);
+          // Hide loading spinner on error
+          loadingOverlay.style.display = "none";
+        });
+      }
+    }
+
+    // Function to complete the onboarding process (duplicate of openOnboardingComponent)
+    function completeOnboarding() {
+      console.log("Completing onboarding component...");
+      
+      // Increment version number when completing onboarding
+      incrementVersion();
+      
+      // Show loading spinner
+      const loadingOverlay = document.getElementById("loadingOverlay");
+      if (!loadingOverlay) {
+        console.error("Loading overlay element not found!");
+        return;
+      }
+      loadingOverlay.style.display = "flex";
+
+      // Don't show the onboarding modal until content is ready
+      const modal = document.getElementById("onboardingModal");
+      if (!modal) {
+        console.error("Onboarding modal element not found!");
+        loadingOverlay.style.display = "none";
+        return;
+      }
+      
+      // Check if we have a vendor ID, if not, we'll need to create one
+      if (!globalVendorId) {
+        fetch("https://sandbox.unipaas.com/platform/vendors", {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({
+            "businessName": "Better Delivery",
+            "type": "individual",
+            "firstName": "John",
+            "lastName": "Doe",
+            "email": "john.doe@example.com",
+            "country": "GB",
+            "url": "http://example.com",
+            "serviceDescription": "Gym operator",
+            "birthDate": "1980-01-01",
+            "phone": "+44912345678",
+            "category": "FOOD_DELIVERY",
+            "createOnboardingLink": true
+          })
+        })
+        .then(response => response.json())
+        .then(data => {
+          console.log("Created new vendor:", data);
+          globalVendorId = data.id;
+          
+          // Now that we have a vendor ID, proceed with onboarding
+          continueWithCompleteOnboarding();
+        })
+        .catch(err => {
+          console.error("Error creating vendor:", err);
+          loadingOverlay.style.display = "none";
+          alert("Failed to create vendor: " + err.message);
+        });
+      } else {
+        // We already have a vendor ID, proceed directly
+        continueWithCompleteOnboarding();
+      }
+      
+      function continueWithCompleteOnboarding() {
+        // Authorize for this vendor
+        fetch("https://sandbox.unipaas.com/platform/authorize", {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({
+            scopes: ["portal_read", "portal_write"],
+            vendorId: globalVendorId
+          })
+        })
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`Authorization failed with status: ${res.status}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log("Authorization successful, creating complete onboarding component");
+          const newAccessToken = data.accessToken;
+          
+          // Store the latest access token for display in settings
+          latestAccessToken = newAccessToken;
+          
+          // Create components with proper configuration
+          if (!balanceComponents) {
+            balanceComponents = unipaas.components(newAccessToken, unipaasDefaultConfig);
+          } else {
+            balanceComponents.reset({ accessToken: newAccessToken });
+          }
+          
+          // Clean any existing content in the onboarding container
+          const onboardingContainer = document.getElementById("onboarding");
+          if (!onboardingContainer) {
+            console.error("Onboarding container element not found!");
+            loadingOverlay.style.display = "none";
+            return;
+          }
+          
+          console.log("Mounting complete onboarding component");
+          
+          // Create the onboarding component
+          const onboarding = balanceComponents.create("onboarding");
+          
+          // Pre-set the address by initializing fields
+          fetch(`https://sandbox.unipaas.com/platform/vendors/${globalVendorId}/onboarding`, {
+            method: "POST",
+            headers: getApiHeaders(),
+            body: JSON.stringify({
+              "fields": [
+                {
+                  "alias": "individual.address",
+                  "value": {
+                    "country": "GB",
+                    "city": "London",
+                    "street": "New Cavendish Street",
+                    "houseNumber": "64",
+                    "postCode": "W1G 8TB"
+                  }
+                },
+                {
+                  "alias": "business.bankAccount",
+                  "value": "38290008"
+                },
+                {
+                  "alias": "business.sortCode",
+                  "value": "200415"
+                }
+              ]
+            })
+          })
+          .then(() => {
+            // Mount the onboarding component after setting up the fields
+            onboarding.mount("#onboarding");
+            
+            // Show the modal and hide the loading overlay after address is set
+            setTimeout(() => {
+              console.log("Displaying complete onboarding modal with pre-set address");
+              modal.style.display = "flex";
+              loadingOverlay.style.display = "none";
+            }, 500); // Delay to ensure component is fully rendered
+          })
+          .catch(err => {
+            console.error("Error setting onboarding fields:", err);
+            // Mount anyway even if field setup fails
+            onboarding.mount("#onboarding");
+            
+            // Still show the modal even if address setup failed
+            setTimeout(() => {
+              console.log("Displaying complete onboarding modal (without pre-set address)");
+              modal.style.display = "flex";
+              loadingOverlay.style.display = "none";
+            }, 500);
+          });
+        })
+        .catch(err => {
+          console.error("Error during complete onboarding setup:", err);
+          alert("Error setting up complete onboarding: " + err.message);
           // Hide loading spinner on error
           loadingOverlay.style.display = "none";
         });
@@ -3696,7 +3869,7 @@
         country: "GB",
         email: customerEmail,
         vendorId: globalVendorId,
-        paymentMethods: paymentMethods,
+      
         reference: reference,
         consumer: { 
           reference: `consumer_${timestamp}`,
@@ -5094,7 +5267,7 @@
         email: customerEmail,
         storePaymentMethod: true,
         vendorId: globalVendorId,
-        paymentMethods: ["card"],
+      
         reference: reference,
         consumer: { 
           reference: `consumer_${timestamp}`,
@@ -5224,14 +5397,23 @@
     let tfcScriptLoaded = false;
     
     function openTFCCheckoutModal(fromURL = false) {
+      console.log('=== OPENING TFC CHECKOUT MODAL ===');
+      console.log('fromURL parameter:', fromURL);
+      
+      // If NOT from URL (user manually selected TFC), clear any old session token
+      if (!fromURL) {
+        console.log('Manual TFC selection - clearing any existing session token');
+        localStorage.removeItem('tfcAccessToken');
+      }
+      
       // Open the TFC modal
       openModal('tfcCheckoutModal');
       
       // Load TFC script and initialize checkout
-      loadTFCScriptAndInitialize();
+      loadTFCScriptAndInitialize(fromURL);
     }
     
-    function loadTFCScriptAndInitialize() {
+    function loadTFCScriptAndInitialize(fromURL = false) {
       // Check if we need to load the TFC script
       if (!tfcScriptLoaded) {
         // Create a separate script element for TFC
@@ -5240,7 +5422,7 @@
         tfcScript.onload = function() {
           tfcScriptLoaded = true;
           console.log('TFC script loaded successfully');
-          setTimeout(initializeTFCCheckout, 100); // Small delay to ensure script is ready
+          setTimeout(() => createTFCTokenAndInitialize(fromURL), 100); // Small delay to ensure script is ready
         };
         tfcScript.onerror = function() {
           console.error('Failed to load TFC script');
@@ -5250,12 +5432,225 @@
         // Add to head temporarily
         document.head.appendChild(tfcScript);
       } else {
-        // Script already loaded, just initialize
-        initializeTFCCheckout();
+        // Script already loaded, just create token and initialize
+        createTFCTokenAndInitialize(fromURL);
       }
     }
     
-    function initializeTFCCheckout() {
+    function createTFCTokenAndInitialize(fromURL = false) {
+      // fromURL parameter indicates if we're coming back from HMRC redirect (tfc=true in URL)
+      const isRedirectBack = fromURL;
+      
+      console.log('=== TFC CHECKOUT INITIALIZATION ===');
+      console.log('isRedirectBack (from URL tfc=true):', isRedirectBack);
+      
+      if (isRedirectBack) {
+        // When coming back from HMRC redirect, reuse saved session token
+        console.log('=== TFC REDIRECT BACK DETECTED ===');
+        console.log('Checking localStorage for saved session token...');
+        
+        const savedSessionToken = localStorage.getItem('tfcAccessToken');
+        
+        if (savedSessionToken) {
+          console.log('✓ Found saved session token in localStorage');
+          console.log('Reusing saved session token:', savedSessionToken.substring(0, 50) + '...');
+          initializeTFCCheckout(savedSessionToken);
+          return; // Exit early - don't create new token
+        } else {
+          console.log('✗ No saved session token found in localStorage');
+          console.log('This should not happen - will create new token');
+        }
+      }
+      
+      // First time OR no saved token - generate random references and create new token
+      console.log('=== CREATING NEW TFC TOKEN ===');
+      console.log('About to generate random references...');
+      
+      const generateRandomReference = () => {
+        const randomNum = Math.random();
+        const calculatedNum = Math.floor(100000000 + randomNum * 900000000);
+        const result = calculatedNum.toString();
+        console.log('generateRandomReference called - random:', randomNum, 'calculated:', calculatedNum, 'result:', result);
+        return result;
+      };
+      
+      console.log('Calling generateRandomReference for mainReference...');
+      const mainReference = generateRandomReference();
+      console.log('mainReference =', mainReference, 'type:', typeof mainReference);
+      
+      console.log('Calling generateRandomReference for consumerReference...');
+      const consumerReference = generateRandomReference();
+      console.log('consumerReference =', consumerReference, 'type:', typeof consumerReference);
+      
+      console.log('Generated new random references:');
+      console.log('- Main Reference:', mainReference);
+      console.log('- Consumer Reference:', consumerReference);
+      
+      // Get amount from modal if available, otherwise default to 40
+      let amount = 40;
+      const amountInput = document.getElementById('modalAmountInput');
+      if (amountInput && amountInput.value) {
+        amount = parseFloat(amountInput.value) || 40;
+      }
+      
+      // Get customer email
+      let customerEmail = "hen.hadayo@unipaas.com";
+      const customerSelect = document.getElementById('customerSelect');
+      if (customerSelect) {
+        if (customerSelect.value === 'sarah') {
+          customerEmail = "sarah.johnson@gmail.com";
+        } else if (customerSelect.value === 'michael') {
+          customerEmail = "mike.mitchell@gmail.com";
+        } else if (customerSelect.value === 'lisa') {
+          customerEmail = "lisa.oconnor@gmail.com";
+        }
+      }
+      
+      // Get service description from product select
+      let description = "Full day care";
+      const productSelect = document.getElementById('modalProductSelect');
+      if (productSelect && productSelect.selectedIndex >= 0) {
+        const selectedOption = productSelect.options[productSelect.selectedIndex];
+        description = selectedOption.text || "Full day care";
+      }
+      
+      // Create TFC token request
+      const tfcTokenRequest = {
+        scopes: ["master"],
+        email: customerEmail,
+        reference: mainReference,
+        description: description,
+        consumer: {
+          reference: consumerReference
+        },
+        country: "GB",
+        currency: "GBP",
+        amount: amount,
+        vendorId: globalVendorId || "6847c40e23cb8d730cca6dbc",
+        embeddedRedirect: "https://odedkovach.github.io/checkout/index.html?tfc=true"
+      };
+      
+      console.log('=== FINAL TFC TOKEN REQUEST ===');
+      console.log('Creating TFC token with request:', tfcTokenRequest);
+      console.log('TFC Token Request Details:');
+      console.log('- Reference:', tfcTokenRequest.reference, '(should be:', mainReference, ')');
+      console.log('- Consumer Reference:', tfcTokenRequest.consumer.reference, '(should be:', consumerReference, ')');
+      console.log('- Email:', tfcTokenRequest.email);
+      console.log('- Amount:', tfcTokenRequest.amount);
+      console.log('- Description:', tfcTokenRequest.description);
+      console.log('- Embedded Redirect:', tfcTokenRequest.embeddedRedirect);
+      console.log('- Vendor ID:', tfcTokenRequest.vendorId);
+      console.log('- Country:', tfcTokenRequest.country);
+      console.log('- Currency:', tfcTokenRequest.currency);
+      
+      console.log('VERIFICATION: mainReference === tfcTokenRequest.reference?', mainReference === tfcTokenRequest.reference);
+      console.log('VERIFICATION: consumerReference === tfcTokenRequest.consumer.reference?', consumerReference === tfcTokenRequest.consumer.reference);
+      
+      // Show loading state
+      const checkoutContainer = document.getElementById('tfcCheckout');
+      if (checkoutContainer) {
+        checkoutContainer.innerHTML = '<div style="text-align: center; padding: 2rem;"><div class="spinner" style="margin: 0 auto 1rem;"></div><p>Creating TFC payment session...</p></div>';
+      }
+      
+      // Create TFC token
+      console.log('=== MAKING API REQUEST ===');
+      console.log('API URL:', "https://sandbox.unipaas.com/platform/pay-ins/checkout/");
+      console.log('Request Headers:', getApiHeaders());
+      
+      const requestBodyString = JSON.stringify(tfcTokenRequest);
+      console.log('Request Body (JSON string):', requestBodyString);
+      console.log('Request Body (parsed):', JSON.parse(requestBodyString));
+      
+      // Verify the reference in the request body
+      const parsedBody = JSON.parse(requestBodyString);
+      console.log('VERIFICATION: Reference in request body:', parsedBody.reference);
+      console.log('VERIFICATION: Consumer reference in request body:', parsedBody.consumer.reference);
+      console.log('VERIFICATION: Does reference match mainReference?', parsedBody.reference === mainReference);
+      console.log('VERIFICATION: Does consumer.reference match consumerReference?', parsedBody.consumer.reference === consumerReference);
+      
+      fetch("https://sandbox.unipaas.com/platform/pay-ins/checkout/", {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: requestBodyString
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`TFC token creation failed with status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('=== API RESPONSE RECEIVED ===');
+        console.log('TFC token created successfully:', data);
+        console.log('TFC API Response Details:');
+        console.log('- Full Response:', JSON.stringify(data, null, 2));
+        console.log('- Available fields:', Object.keys(data));
+        console.log('- Reference in response:', data.reference);
+        
+        // Compare what we sent vs what we got back
+        console.log('=== COMPARISON: REQUEST vs RESPONSE ===');
+        console.log('Sent mainReference:', mainReference);
+        console.log('Received reference:', data.reference);
+        console.log('Do they match?', mainReference === data.reference);
+        
+        // The checkout endpoint might return different field names
+        // Check for sessionToken, accessToken, or token fields
+        const token = data.sessionToken || data.accessToken || data.token;
+        console.log('Extracted session token:', token);
+        
+        // Try to decode the JWT to see what's inside
+        if (token) {
+          try {
+            const parts = token.split('.');
+            if (parts.length === 3) {
+              const payload = JSON.parse(atob(parts[1]));
+              console.log('=== DECODED SESSION TOKEN PAYLOAD ===');
+              console.log('Token payload:', payload);
+              console.log('merchantuniqueid (reference) in token:', payload.merchantuniqueid);
+              console.log('consumer.reference in token:', payload.consumer?.reference);
+            }
+          } catch (e) {
+            console.log('Could not decode token:', e);
+          }
+        }
+        
+        if (token) {
+          // Clear any existing session token first
+          console.log('Clearing any existing TFC session token from localStorage...');
+          localStorage.removeItem('tfcAccessToken');
+          
+          // Save new session token to localStorage
+          localStorage.setItem('tfcAccessToken', token);
+          console.log('✓ New TFC session token saved to localStorage');
+          console.log('Session token:', token.substring(0, 50) + '...');
+          
+          // Initialize checkout with new token
+          initializeTFCCheckout(token);
+        } else {
+          console.error('No token found in response:', data);
+          throw new Error('No session token in response');
+        }
+      })
+      .catch(error => {
+        console.error('Error creating TFC token:', error);
+        
+        // Show error in checkout container
+        if (checkoutContainer) {
+          checkoutContainer.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: #e74c3c;">
+              <p style="margin-bottom: 1rem;">Error creating TFC payment session</p>
+              <button onclick="createTFCTokenAndInitialize()" style="padding: 0.5rem 1rem; background: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Try Again
+              </button>
+            </div>
+          `;
+        }
+        
+        alert("Error creating TFC payment session: " + error.message);
+      });
+    }
+    
+    function initializeTFCCheckout(accessToken) {
       // Check if unipaas object is available
       if (typeof unipaas === 'undefined') {
         console.error('UniPaas object not available');
@@ -5263,8 +5658,11 @@
         return;
       }
       
-      // TFC Access Token (hardcoded as per requirements)
-      const TFC_ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJtZXJjaGFudElkIjoiNjg0N2MzZDE4ZTdhYmQ5NDBiMzliMmViIiwibWVyY2hhbnROYW1lIjoib2RlZCtjYXNobHkiLCJhbW91bnQiOjEwMCwib3JpZ2luYWxBbW91bnQiOjEwMCwiY3VycmVuY3kiOiJHQlAiLCJlbWFpbCI6Imhlbi5oYWRheW9AdW5pcGFhcy5jb20iLCJjb3VudHJ5IjoiR0IiLCJzZWxsZXJJZCI6IjY4NDdjNDBlMjNjYjhkNzMwY2NhNmRiYyIsInZlbmRvcklkIjoiNjg0N2M0MGUyM2NiOGQ3MzBjY2E2ZGJjIiwic2NvcGVzIjpbIndlYnNka19hY2Nlc3MiLCJkaXJlY3RfZGViaXRfcmVhZCIsImRpcmVjdF9kZWJpdF93cml0ZSJdLCJwYXltZW50TWV0aG9kcyI6WyJ0YXhGcmVlQ2hpbGRjYXJlIiwiY3JlZGl0Q2FyZCJdLCJpc1JlY3VycmluZyI6ZmFsc2UsImNvbnN1bWVySWQiOiI2ODc4YjUyNTJkN2RkYzU5OWY5MjE3MDciLCJjb25zdW1lciI6eyJyZWZlcmVuY2UiOiJBQkNEMTIzNDM4ODc0In0sImVudiI6InNhbmRib3giLCJwYXltZW50TGlua0lkIjoiSlB5WVNoODhnayIsImlhdCI6MTc1Mjc0MTE1NywiZXhwIjoxNzUyODI3NTU3fQ.Gl8plQaH1FPjakpQ_cHSlM5M_33OdSb6_W8PzfZ2fcc";
+      // Clear any error states
+      const checkoutContainer = document.getElementById('tfcCheckout');
+      if (checkoutContainer) {
+        checkoutContainer.innerHTML = '';
+      }
       
       // TFC Theme configuration
       const tfcConfig = {
@@ -5276,24 +5674,28 @@
       try {
         // Only initialize if not already done
         if (!tfcComponents) {
-          console.log('Initializing TFC checkout components...');
+          console.log('Initializing TFC checkout components with dynamic token...');
           
           // Create the UniPaas buyerComponents object for TFC
-          tfcComponents = unipaas.buyerComponents(TFC_ACCESS_TOKEN, tfcConfig);
+          tfcComponents = unipaas.buyerComponents(accessToken, tfcConfig);
           
           // Listen to TFC payment events
           tfcComponents.on("paymentSuccess", (e) => {
             console.log("TFC Payment succeeded:", e.detail);
             
+            // Clear saved session token on success
+            localStorage.removeItem('tfcAccessToken');
+            console.log('✓ Cleared TFC session token from localStorage after successful payment');
+            
             // Close TFC modal
-           // closeModal('tfcCheckoutModal');
+            // closeModal('tfcCheckoutModal');
             
             // Clean up TFC components
-         //   cleanupTFCComponents();
+            // cleanupTFCComponents();
             
             // Show success message
             setTimeout(() => {
-              //alert("TFC Payment succeeded!");
+              // alert("TFC Payment succeeded!");
             }, 500);
           });
           
@@ -5350,7 +5752,11 @@
     const originalCloseModal = window.closeModal;
     window.closeModal = function(modalId) {
       if (modalId === 'tfcCheckoutModal') {
+        // Clean up TFC components when modal is closed
         cleanupTFCComponents();
+        // Clear saved session token when modal is manually closed
+        localStorage.removeItem('tfcAccessToken');
+        console.log('✓ Cleared TFC session token from localStorage (modal closed)');
       }
       originalCloseModal(modalId);
     };
